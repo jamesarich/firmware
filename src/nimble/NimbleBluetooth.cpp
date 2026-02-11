@@ -45,6 +45,7 @@ constexpr uint16_t kPreferredBleTxTimeUs = (kPreferredBleTxOctets + 14) * 8;
 #define NIMBLE_BLUETOOTH_FROM_PHONE_QUEUE_SIZE 3
 
 NimBLECharacteristic *fromNumCharacteristic;
+NimBLECharacteristic *fromRadioSyncCharacteristic;
 NimBLECharacteristic *BatteryCharacteristic;
 NimBLECharacteristic *logRadioCharacteristic;
 NimBLEServer *bleServer;
@@ -201,7 +202,7 @@ class BluetoothPhoneAPI : public PhoneAPI, public concurrency::OSThread
 
     bool runOnceHasWorkToDo() { return runOnceHasWorkToPhone() || runOnceHasWorkFromPhone(); }
 
-    bool runOnceHasWorkToPhone() { return onReadCallbackIsWaitingForData || runOnceToPhoneCanPreloadNextPacket(); }
+    bool runOnceHasWorkToPhone() { return onReadCallbackIsWaitingForData || runOnceToPhoneCanPreloadNextPacket() || (fromRadioSyncCharacteristic && fromRadioSyncCharacteristic->getSubscribeCount() > 0 && available()); }
 
     bool runOnceToPhoneCanPreloadNextPacket()
     {
@@ -234,7 +235,7 @@ class BluetoothPhoneAPI : public PhoneAPI, public concurrency::OSThread
         uint8_t fromRadioBytes[meshtastic_FromRadio_size] = {0};
         size_t numBytes = 0;
 
-        if (onReadCallbackIsWaitingForData || runOnceToPhoneCanPreloadNextPacket()) {
+        if (onReadCallbackIsWaitingForData || runOnceToPhoneCanPreloadNextPacket() || (fromRadioSyncCharacteristic && fromRadioSyncCharacteristic->getSubscribeCount() > 0)) {
             numBytes = getFromRadio(fromRadioBytes);
 
             if (numBytes == 0) {
@@ -259,6 +260,10 @@ class BluetoothPhoneAPI : public PhoneAPI, public concurrency::OSThread
                         memcpy(toPhoneQueue[storeAtIndex].data(), fromRadioBytes, numBytes);
                         toPhoneQueueByteSizes[storeAtIndex] = numBytes;
                         toPhoneQueueSize++;
+                        if (fromRadioSyncCharacteristic && fromRadioSyncCharacteristic->getSubscribeCount() > 0) {
+                            fromRadioSyncCharacteristic->setValue(fromRadioBytes, numBytes);
+                            fromRadioSyncCharacteristic->indicate();
+                        }
                     }
 #ifdef DEBUG_NIMBLE_ON_READ_TIMING
                     LOG_DEBUG("BLE getFromRadio returned numBytes=%u, pushed toPhoneQueueSize=%u", numBytes,
@@ -871,8 +876,8 @@ void NimbleBluetooth::setupService()
         // Allow notifications so phones can stream FromRadio without polling.
         FromRadioCharacteristic = bleService->createCharacteristic(FROMRADIO_UUID, NIMBLE_PROPERTY::READ);
         fromNumCharacteristic = bleService->createCharacteristic(FROMNUM_UUID, NIMBLE_PROPERTY::NOTIFY | NIMBLE_PROPERTY::READ);
-        logRadioCharacteristic =
-            bleService->createCharacteristic(LOGRADIO_UUID, NIMBLE_PROPERTY::NOTIFY | NIMBLE_PROPERTY::READ, 512U);
+        fromRadioSyncCharacteristic = bleService->createCharacteristic(FROMRADIOSYNC_UUID, NIMBLE_PROPERTY::INDICATE | NIMBLE_PROPERTY::READ);
+            logRadioCharacteristic = bleService->createCharacteristic(LOGRADIO_UUID, NIMBLE_PROPERTY::NOTIFY | NIMBLE_PROPERTY::READ, 512U);
     } else {
         ToRadioCharacteristic = bleService->createCharacteristic(
             TORADIO_UUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_AUTHEN | NIMBLE_PROPERTY::WRITE_ENC);
@@ -881,6 +886,9 @@ void NimbleBluetooth::setupService()
         fromNumCharacteristic =
             bleService->createCharacteristic(FROMNUM_UUID, NIMBLE_PROPERTY::NOTIFY | NIMBLE_PROPERTY::READ |
                                                                NIMBLE_PROPERTY::READ_AUTHEN | NIMBLE_PROPERTY::READ_ENC);
+        fromRadioSyncCharacteristic = bleService->createCharacteristic(
+            FROMRADIOSYNC_UUID, NIMBLE_PROPERTY::INDICATE | NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::READ_AUTHEN |
+                                    NIMBLE_PROPERTY::READ_ENC | NIMBLE_PROPERTY::INDICATE_AUTHEN | NIMBLE_PROPERTY::INDICATE_ENC);
         logRadioCharacteristic = bleService->createCharacteristic(
             LOGRADIO_UUID,
             NIMBLE_PROPERTY::NOTIFY | NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::READ_AUTHEN | NIMBLE_PROPERTY::READ_ENC, 512U);
@@ -892,6 +900,7 @@ void NimbleBluetooth::setupService()
 
     fromRadioCallbacks = new NimbleBluetoothFromRadioCallback();
     FromRadioCharacteristic->setCallbacks(fromRadioCallbacks);
+    fromRadioSyncCharacteristic->setCallbacks(fromRadioCallbacks);
 
     bleService->start();
 

@@ -11,6 +11,7 @@
 static BLEService meshBleService = BLEService(BLEUuid(MESH_SERVICE_UUID_16));
 static BLECharacteristic fromNum = BLECharacteristic(BLEUuid(FROMNUM_UUID_16));
 static BLECharacteristic fromRadio = BLECharacteristic(BLEUuid(FROMRADIO_UUID_16));
+static BLECharacteristic fromRadioSync = BLECharacteristic(BLEUuid(FROMRADIOSYNC_UUID_16));
 static BLECharacteristic toRadio = BLECharacteristic(BLEUuid(TORADIO_UUID_16));
 static BLECharacteristic logRadio = BLECharacteristic(BLEUuid(LOGRADIO_UUID_16));
 
@@ -44,6 +45,14 @@ class BluetoothPhoneAPI : public PhoneAPI
 
         LOG_INFO("BLE notify fromNum");
         fromNum.notify32(fromRadioNum);
+
+        if (fromRadioSync.indicateEnabled()) {
+            uint8_t syncBytes[meshtastic_FromRadio_size];
+            size_t numBytes = getFromRadio(syncBytes);
+            if (numBytes > 0) {
+                fromRadioSync.indicate(syncBytes, (uint16_t)numBytes);
+            }
+        }
     }
 
     /// Check the current underlying physical link to see if the client is currently connected
@@ -148,7 +157,7 @@ void onFromRadioAuthorize(uint16_t conn_hdl, BLECharacteristic *chr, ble_gatts_e
         size_t numBytes = bluetoothPhoneAPI->getFromRadio(fromRadioBytes);
         // Someone is going to read our value as soon as this callback returns.  So fill it with the next message in the queue
         // or make empty if the queue is empty
-        fromRadio.write(fromRadioBytes, numBytes);
+        chr->write(fromRadioBytes, numBytes);
     } else {
         // LOG_INFO("Ignore successor read");
     }
@@ -197,6 +206,13 @@ void setupMeshService(void)
     fromRadio.setBuffer(fromRadioBytes, sizeof(fromRadioBytes)); // we preallocate our fromradio buffer so we won't waste space
     // for two copies
     fromRadio.begin();
+
+    fromRadioSync.setProperties(CHR_PROPS_INDICATE | CHR_PROPS_READ);
+    fromRadioSync.setPermission(secMode, SECMODE_NO_ACCESS);
+    fromRadioSync.setMaxLen(sizeof(fromRadioBytes));
+    fromRadioSync.setReadAuthorizeCallback(onFromRadioAuthorize, false);
+    fromRadioSync.setBuffer(fromRadioBytes, sizeof(fromRadioBytes));
+    fromRadioSync.begin();
 
     toRadio.setProperties(CHR_PROPS_WRITE);
     toRadio.setPermission(secMode, secMode); // FIXME secure this!
