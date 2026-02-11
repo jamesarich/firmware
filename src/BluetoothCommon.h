@@ -16,18 +16,21 @@
 #define LOGRADIO_UUID "5a3d6e49-06e6-4423-9944-e9de8cdf9547"
 
 // NRF52 wants these constants as byte arrays
-// Generated here https://yupana-engineering.com/online-uuid-to-c-array-converter - but in REVERSE BYTE ORDER
-extern const uint8_t MESH_SERVICE_UUID_16[], TORADIO_UUID_16[16u], FROMRADIO_UUID_16[], FROMNUM_UUID_16[], LOGRADIO_UUID_16[], FROMRADIOSYNC_UUID_16[];
+// Generated here
+// https://yupana-engineering.com/online-uuid-to-c-array-converter - but in
+// REVERSE BYTE ORDER
+extern const uint8_t MESH_SERVICE_UUID_16[], TORADIO_UUID_16[16u],
+    FROMRADIO_UUID_16[], FROMNUM_UUID_16[], LOGRADIO_UUID_16[],
+    FROMRADIOSYNC_UUID_16[];
 
 /// Given a level between 0-100, update the BLE attribute
 void updateBatteryLevel(uint8_t level);
 
-class BluetoothApi
-{
-  public:
-    virtual void setup();
-    virtual void shutdown();
-    virtual void clearBonds();
-    virtual bool isConnected();
-    virtual int getRssi() = 0;
+class BluetoothApi {
+public:
+  virtual void setup();
+  virtual void shutdown();
+  virtual void clearBonds();
+  virtual bool isConnected();
+  virtual int getRssi() = 0;
 };
